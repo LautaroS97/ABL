@@ -9,7 +9,7 @@ const morgan = require('morgan');
 const cors = require('cors');
 
 const app = express();
-const port = process.env.PORT || 80;
+const port = 3000; // Puerto fijo
 
 app.use(helmet());
 app.use(bodyParser.json());
