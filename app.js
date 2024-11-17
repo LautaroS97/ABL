@@ -61,7 +61,6 @@ async function verifyProperty(lat, lng) {
 
         if (response.data) {
             if (response.data.propiedad_horizontal === "Si") {
-                // Si es propiedad horizontal, verificar si hay unidades funcionales
                 console.log('Propiedad horizontal detectada. Verificando unidades funcionales...');
                 response = await axios.get(`${baseUrl}&ph`);
                 if (response.data && response.data.phs && response.data.phs.length > 0) {
@@ -72,27 +71,23 @@ async function verifyProperty(lat, lng) {
                     return { message: 'La partida no existe' };
                 }
             } else if (response.data.pdamatriz) {
-                // Verificar propiedades no horizontales
                 const pdamatriz = response.data.pdamatriz;
                 console.log('Número de partida matriz obtenido:', pdamatriz);
-                const debtUrl = `https://lb.agip.gob.ar/ConsultaABL/comprobante/ESTADO-DEUDA-ABL-734456.pdf?boletasSeleccionadas=&identificadorPDF=${pdamatriz}&dvPDF=4&fechaInicioPDF=`;
 
                 try {
-                    const debtResponse = await axios.get(debtUrl, { responseType: 'arraybuffer' });
-                    const contentType = debtResponse.headers['content-type'];
+                    const debtUrl = `https://lb.agip.gob.ar/ConsultaABL/comprobante/ESTADO-DEUDA-ABL-734456.pdf?boletasSeleccionadas=&identificadorPDF=${pdamatriz}&dvPDF=4&fechaInicioPDF=`;
+                    const debtResponse = await axios.get(debtUrl, { responseType: 'text' });
 
-                    if (contentType === 'application/pdf') {
-                        console.log('La partida existe (PDF válido encontrado).');
-                        return { message: 'La partida existe' };
-                    } else {
-                        console.log('No se encontró un PDF válido. La partida no existe.');
+                    // Verificar si la respuesta contiene el "statusCode": 402
+                    if (debtResponse.data.includes('"statusCode":402')) {
+                        console.log('La partida no existe (statusCode 402 detectado).');
                         return { message: 'La partida no existe' };
+                    } else {
+                        console.log('La partida existe (statusCode 402 no detectado).');
+                        return { message: 'La partida existe', pdamatriz: pdamatriz };
                     }
                 } catch (error) {
-                    if (error.response && error.response.status === 402) {
-                        console.log('La partida no existe (error de estado 402).');
-                        return { message: 'La partida no existe' };
-                    }
+                    console.error('Error accediendo al URL de deuda:', error);
                     throw error;
                 }
             }
