@@ -168,7 +168,7 @@ async function sendEmail(email, data) {
                     ${dataFormattedHtml}
                 </ul><hr>
                 <p>Puede utilizar esta información para realizar consultas adicionales en la AGIP.</p>
-                <img src="https://proprop.com.ar/wp-content/uploads/2024/06/20240619_194805-min.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
+                <img src="https://proprop.com.ar/wp-content/uploads/2024/11/ABL-2.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
                 <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste los números de partida horizontal al servicio de consultas de ProProp.</p>
                 <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;"><b>Ante cualquier duda, puede responder este correo.</b></p>
             </div>
