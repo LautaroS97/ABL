@@ -154,29 +154,29 @@ async function sendEmail(email, data) {
         const dataFormatted = data.map(item => `Partida: ${item.pdahorizontal}, Piso: ${item.piso}, Dpto: ${item.dpto}`).join('\n');
         const dataFormattedHtml = data.map(item => `<li>Partida: <b>${item.pdahorizontal}</b>, Piso: <b>${item.piso}</b>, Dpto: <b>${item.dpto}</b></li>`).join('');
 
-        dataText = `Los números de partida horizontal son:\n${dataFormatted}\n\nTe llegó este correo porque solicitaste los números de partida horizontal al servicio de consultas de ProProp.`;
+        dataText = `Los números de partida son:\n${dataFormatted}\n\nTe llegó este correo porque solicitaste los números de partida al servicio de consultas de ProProp.`;
         dataHtml = `
             <div style="padding: 1rem; text-align: center;">
                 <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
-                <p>Los números de partida horizontal son:</p>
+                <p>Los números de partida son:</p>
                 <ul style="text-align: left; padding-left: 2rem;">
                     ${dataFormattedHtml}
                 </ul><hr>
-                <p>Puede utilizar esta información para realizar consultas adicionales en la AGIP.</p>
+                <p>Puede utilizar esta información para realizar consultas adicionales en la AGIP, haciendo <a href="https://lb.agip.gob.ar/ConsultaABL/">clic acá.</a></p>
                 <img src="https://proprop.com.ar/wp-content/uploads/2024/11/ABL-2.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
-                <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste los números de partida horizontal al servicio de consultas de ProProp.</p>
+                <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste los números de partida al servicio de consultas de ProProp.</p>
                 <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;"><b>Ante cualquier duda, puede responder este correo.</b></p>
             </div>
         `;
     } else {
-        dataText = `El número de partida matriz es:\n${data}\n\nTe llegó este correo porque solicitaste tu número de partida matriz al servicio de consultas de ProProp.`;
+        dataText = `El número de partida  es:\n${data}\n\nTe llegó este correo porque solicitaste tu número de partida al servicio de consultas de ProProp.`;
         dataHtml = `
             <div style="padding: 1rem; text-align: center;">
                 <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
-                <p>El número de partida matriz es:<br><b>${data}</b></p><hr>
-                <p>Puede utilizar esta información para realizar consultas adicionales en la AGIP.</p>
+                <p>El número de partida es:<br><b>${data}</b></p><hr>
+                <p>Puede utilizar esta información para realizar consultas adicionales en la AGIP, haciendo <a href="https://lb.agip.gob.ar/ConsultaABL/">clic acá.</a></p>
                 <img src="https://proprop.com.ar/wp-content/uploads/2024/11/ABL-2.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
-                <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste tu número de partida matriz al servicio de consultas de ProProp.</p>
+                <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste tu número de partida al servicio de consultas de ProProp.</p>
                 <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;"><b>Ante cualquier duda, puede responder este correo.</b></p>
             </div>
         `;
