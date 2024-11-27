@@ -178,9 +178,9 @@ async function sendEmail(email, data) {
         tls: {
             rejectUnauthorized: false
         },
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 15000,
+        connectionTimeout: 30000,
+        greetingTimeout: 30000,
+        socketTimeout: 30000,
     });
 
     let mailOptions = {
@@ -205,4 +205,4 @@ const server = app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
 
-server.setTimeout(15000);
+server.setTimeout(30000);
