@@ -3,10 +3,12 @@ require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
+const axiosRetry = require('axios-retry'); // Importar axios-retry
 const nodemailer = require('nodemailer');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const cors = require('cors');
+const puppeteer = require('puppeteer'); // Importar Puppeteer
 
 const app = express();
 const port = 3000; // Puerto fijo
@@ -17,6 +19,24 @@ app.use(morgan('combined'));
 app.use(cors());
 
 app.options('*', cors());
+
+// Configurar tiempo de espera predeterminado para Axios
+axios.defaults.timeout = 60000; // 60 segundos
+
+// Configurar reintentos con axios-retry
+axiosRetry(axios, {
+    retries: 3,
+    retryDelay: axiosRetry.exponentialDelay,
+    shouldResetTimeout: true,
+    retryCondition: (error) => {
+        // Reintentar en caso de errores de red o tiempo de espera
+        return (
+            error.code === 'ECONNABORTED' ||
+            error.code === 'ETIMEDOUT' ||
+            error.response?.status >= 500
+        );
+    },
+});
 
 // Endpoint para obtener datos de ABL y enviar email
 app.post('/fetch-abl-data', async (req, res) => {
@@ -74,31 +94,78 @@ async function verifyProperty(lat, lng) {
                 const pdamatriz = response.data.pdamatriz;
                 console.log('Número de partida matriz obtenido:', pdamatriz);
 
-                try {
-                    const debtUrl = `https://lb.agip.gob.ar/ConsultaABL/comprobante/ESTADO-DEUDA-ABL-734456.pdf?boletasSeleccionadas=&identificadorPDF=${pdamatriz}&dvPDF=4&fechaInicioPDF=`;
-                    const debtResponse = await axios.get(debtUrl, { responseType: 'text' });
-
-                    // Verificar si la respuesta contiene el "statusCode": 402
-                    if (debtResponse.data.includes('"statusCode":402')) {
-                        console.log('La partida no existe (statusCode 402 detectado).');
-                        return { message: 'La partida no existe' };
-                    } else {
-                        console.log('La partida existe (statusCode 402 no detectado).');
-                        return { message: 'La partida existe', pdamatriz: pdamatriz };
-                    }
-                } catch (error) {
-                    console.error('Error accediendo al URL de deuda:', error);
-                    throw error;
+                // Usar Puppeteer para verificar la existencia de la partida matriz
+                const exists = await verifyPartidaWithPuppeteer(pdamatriz);
+                if (exists) {
+                    console.log('La partida existe (verificación con Puppeteer exitosa).');
+                    return { message: 'La partida existe', pdamatriz: pdamatriz };
+                } else {
+                    console.log('La partida no existe (mensaje de error encontrado).');
+                    return { message: 'La partida no existe' };
                 }
+            } else {
+                console.log('La partida no existe (respuesta sin pdamatriz ni phs).');
+                return { message: 'La partida no existe' };
             }
-            console.log('La partida no existe (respuesta sin pdamatriz ni phs).');
-            return { message: 'La partida no existe' };
         } else {
             console.error('Respuesta vacía o sin formato esperado en la verificación.');
             return { error: 'Respuesta vacía o sin formato esperado en la verificación.' };
         }
     } catch (error) {
         console.error('Error verificando la propiedad:', error);
+        throw error;
+    }
+}
+
+let browser; // Variable para reutilizar el navegador de Puppeteer
+
+async function verifyPartidaWithPuppeteer(pdamatriz) {
+    try {
+        const debtUrl = `https://lb.agip.gob.ar/ConsultaABL/comprobante/ESTADO-DEUDA-ABL-734456.pdf?boletasSeleccionadas=&identificadorPDF=${pdamatriz}&dvPDF=4&fechaInicioPDF=`;
+
+        if (!browser) {
+            browser = await puppeteer.launch({
+                headless: true,
+                args: ['--no-sandbox', '--disable-setuid-sandbox'],
+            });
+        }
+
+        const page = await browser.newPage();
+
+        // Bloquear recursos innecesarios para acelerar la carga
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+            const resourceType = req.resourceType();
+            if (['image', 'stylesheet', 'font', 'script', 'media'].includes(resourceType)) {
+                req.abort();
+            } else {
+                req.continue();
+            }
+        });
+
+        // Configurar tiempos de espera
+        await page.setDefaultNavigationTimeout(60000); // 60 segundos
+        await page.setDefaultTimeout(60000); // 60 segundos
+
+        // Navegar a la URL
+        await page.goto(debtUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+
+        // Obtener el contenido de la página
+        const pageContent = await page.content();
+
+        await page.close(); // Cerrar la pestaña
+
+        // Verificar si el texto de error está presente
+        const errorText = '{"url":"","status":"ERROR GIT: PARTIDA DADA DE BAJA (Codigo SQL: 0) Recurso: SGIT0400","statusCode":402}';
+        if (pageContent.includes(errorText)) {
+            console.log('Texto de error encontrado en la página. La partida no existe.');
+            return false; // La partida no existe
+        } else {
+            console.log('Texto de error no encontrado. La partida existe.');
+            return true; // La partida existe
+        }
+    } catch (error) {
+        console.error('Error verificando la partida con Puppeteer:', error);
         throw error;
     }
 }
@@ -111,7 +178,7 @@ async function fetchAblData(lat, lng) {
 
         if (response.data) {
             console.log('Respuesta obtenida:', response.data);
-            
+
             // Verificar si la propiedad es horizontal
             if (response.data.propiedad_horizontal === "Si") {
                 console.log('Propiedad horizontal detectada. Solicitando datos adicionales con &ph...');
@@ -169,7 +236,7 @@ async function sendEmail(email, data) {
             </div>
         `;
     } else {
-        dataText = `El número de partida  es:\n${data}\n\nTe llegó este correo porque solicitaste tu número de partida al servicio de consultas de ProProp.`;
+        dataText = `El número de partida es:\n${data}\n\nTe llegó este correo porque solicitaste tu número de partida al servicio de consultas de ProProp.`;
         dataHtml = `
             <div style="padding: 1rem; text-align: center;">
                 <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
@@ -193,9 +260,9 @@ async function sendEmail(email, data) {
         tls: {
             rejectUnauthorized: false
         },
-        connectionTimeout: 5000,
-        greetingTimeout: 5000,
-        socketTimeout: 10000,
+        connectionTimeout: 60000, // 60 segundos
+        greetingTimeout: 60000, // 60 segundos
+        socketTimeout: 60000, // 60 segundos
     });
 
     let mailOptions = {
@@ -220,4 +287,18 @@ const server = app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
 
-server.setTimeout(10000);
+server.setTimeout(60000); // Establecer tiempo de espera del servidor a 60 segundos
+
+// Manejar el cierre del navegador Puppeteer al terminar la aplicación
+process.on('exit', async () => {
+    if (browser) {
+        await browser.close();
+    }
+});
+
+process.on('SIGINT', async () => {
+    if (browser) {
+        await browser.close();
+    }
+    process.exit();
+});
