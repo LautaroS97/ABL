@@ -9,10 +9,24 @@ const port = 3000; // Puerto fijo
 
 app.use(express.json()); // Reemplazo de bodyParser para manejar JSON
 
+// Función de reintentos con un límite de 5 intentos y timeout de 3 segundos por conexión
+async function fetchWithRetries(url, maxRetries = 5, timeout = 3000) {
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            const response = await axios.get(url, { timeout });
+            return response; // Éxito: retornar respuesta
+        } catch (error) {
+            console.error(`Intento ${i + 1} fallido: ${error.message}`);
+            if (i === maxRetries - 1) throw error; // Último intento fallido
+        }
+    }
+}
+
 // Endpoint para obtener datos de ABL y enviar email
 app.post('/fetch-abl-data', async (req, res) => {
     console.log('Received data:', req.body);
     const { lat, lng, email } = req.body;
+
     try {
         const pdamatriz = await fetchAblData(lat, lng);
         if (pdamatriz) {
@@ -44,16 +58,17 @@ app.post('/verification', async (req, res) => {
     }
 });
 
+// Verificar propiedad (modificado con reintentos)
 async function verifyProperty(lat, lng) {
     try {
         console.log(`Verifying property existence for coordinates: ${lat}, ${lng}`);
         const baseUrl = `https://epok.buenosaires.gob.ar/catastro/parcela/?lng=${lng}&lat=${lat}`;
-        let response = await axios.get(baseUrl);
+        let response = await fetchWithRetries(baseUrl);
 
         if (response.data) {
             if (response.data.propiedad_horizontal === "Si") {
                 console.log('Propiedad horizontal detectada. Verificando unidades funcionales...');
-                response = await axios.get(`${baseUrl}&ph`);
+                response = await fetchWithRetries(`${baseUrl}&ph`);
                 if (response.data && response.data.phs && response.data.phs.length > 0) {
                     console.log('La partida existe (propiedad horizontal).');
                     return { message: 'La partida existe', phs: response.data.phs };
@@ -67,7 +82,7 @@ async function verifyProperty(lat, lng) {
 
                 try {
                     const debtUrl = `https://lb.agip.gob.ar/ConsultaABL/comprobante/ESTADO-DEUDA-ABL-734456.pdf?boletasSeleccionadas=&identificadorPDF=${pdamatriz}&dvPDF=4&fechaInicioPDF=`;
-                    const debtResponse = await axios.get(debtUrl, { responseType: 'text' });
+                    const debtResponse = await fetchWithRetries(debtUrl);
 
                     if (debtResponse.data.includes('"statusCode":402')) {
                         console.log('La partida no existe (statusCode 402 detectado).');
@@ -93,19 +108,19 @@ async function verifyProperty(lat, lng) {
     }
 }
 
+// Obtener datos de ABL (modificado con reintentos)
 async function fetchAblData(lat, lng) {
     try {
         console.log(`Fetching ABL data for coordinates: ${lat}, ${lng}`);
         const baseUrl = `https://epok.buenosaires.gob.ar/catastro/parcela/?lng=${lng}&lat=${lat}`;
-        let response = await axios.get(baseUrl);
+        let response = await fetchWithRetries(baseUrl);
 
         if (response.data) {
             console.log('Respuesta obtenida:', response.data);
 
             if (response.data.propiedad_horizontal === "Si") {
                 console.log('Propiedad horizontal detectada. Solicitando datos adicionales con &ph...');
-                response = await axios.get(`${baseUrl}&ph`);
-
+                response = await fetchWithRetries(`${baseUrl}&ph`);
                 if (response.data && response.data.phs) {
                     const pdahorizontals = response.data.phs.map(ph => ({
                         pdahorizontal: ph.pdahorizontal,
@@ -136,6 +151,7 @@ async function fetchAblData(lat, lng) {
     }
 }
 
+// Enviar email
 async function sendEmail(email, data) {
     let dataText, dataHtml;
 
@@ -178,9 +194,9 @@ async function sendEmail(email, data) {
         tls: {
             rejectUnauthorized: false
         },
-        connectionTimeout: 60000,
-        greetingTimeout: 60000,
-        socketTimeout: 60000,
+        connectionTimeout: 15000, // Reducido de 60s a 15s
+        greetingTimeout: 15000,
+        socketTimeout: 15000,
     });
 
     let mailOptions = {
@@ -205,4 +221,4 @@ const server = app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
 
-server.setTimeout(60000);
+server.setTimeout(15000); // Reducido de 60s a 15s
