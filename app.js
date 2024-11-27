@@ -18,6 +18,11 @@ app.use(cors());
 
 app.options('*', cors());
 
+// Configuración global de Axios con mayor tiempo de espera
+const axiosInstance = axios.create({
+    timeout: 15000, // 15 segundos
+});
+
 // Endpoint para obtener datos de ABL y enviar email
 app.post('/fetch-abl-data', async (req, res) => {
     console.log('Received data:', req.body);
@@ -57,12 +62,12 @@ async function verifyProperty(lat, lng) {
     try {
         console.log(`Verifying property existence for coordinates: ${lat}, ${lng}`);
         const baseUrl = `https://epok.buenosaires.gob.ar/catastro/parcela/?lng=${lng}&lat=${lat}`;
-        let response = await axios.get(baseUrl);
+        let response = await axiosInstance.get(baseUrl);
 
         if (response.data) {
             if (response.data.propiedad_horizontal === "Si") {
                 console.log('Propiedad horizontal detectada. Verificando unidades funcionales...');
-                response = await axios.get(`${baseUrl}&ph`);
+                response = await axiosInstance.get(`${baseUrl}&ph`);
                 if (response.data && response.data.phs && response.data.phs.length > 0) {
                     console.log('La partida existe (propiedad horizontal).');
                     return { message: 'La partida existe', phs: response.data.phs };
@@ -76,15 +81,15 @@ async function verifyProperty(lat, lng) {
 
                 try {
                     const debtUrl = `https://lb.agip.gob.ar/ConsultaABL/comprobante/ESTADO-DEUDA-ABL-734456.pdf?boletasSeleccionadas=&identificadorPDF=${pdamatriz}&dvPDF=4&fechaInicioPDF=`;
-                    const debtResponse = await axios.get(debtUrl, { responseType: 'text' });
+                    const debtResponse = await axiosInstance.get(debtUrl, { responseType: 'text' });
 
-                    // Verificar si la respuesta contiene el "statusCode": 402
-                    if (debtResponse.data.includes('"statusCode":402')) {
-                        console.log('La partida no existe (statusCode 402 detectado).');
-                        return { message: 'La partida no existe' };
-                    } else {
-                        console.log('La partida existe (statusCode 402 no detectado).');
+                    // Verificar si el DOM contiene un elemento <embed>
+                    if (debtResponse.data.includes('<embed')) {
+                        console.log('La partida existe (elemento <embed> encontrado en el DOM).');
                         return { message: 'La partida existe', pdamatriz: pdamatriz };
+                    } else {
+                        console.log('La partida no existe (elemento <embed> no encontrado en el DOM).');
+                        return { message: 'La partida no existe' };
                     }
                 } catch (error) {
                     console.error('Error accediendo al URL de deuda:', error);
@@ -107,7 +112,7 @@ async function fetchAblData(lat, lng) {
     try {
         console.log(`Fetching ABL data for coordinates: ${lat}, ${lng}`);
         const baseUrl = `https://epok.buenosaires.gob.ar/catastro/parcela/?lng=${lng}&lat=${lat}`;
-        let response = await axios.get(baseUrl);
+        let response = await axiosInstance.get(baseUrl);
 
         if (response.data) {
             console.log('Respuesta obtenida:', response.data);
@@ -115,7 +120,7 @@ async function fetchAblData(lat, lng) {
             // Verificar si la propiedad es horizontal
             if (response.data.propiedad_horizontal === "Si") {
                 console.log('Propiedad horizontal detectada. Solicitando datos adicionales con &ph...');
-                response = await axios.get(`${baseUrl}&ph`);
+                response = await axiosInstance.get(`${baseUrl}&ph`);
 
                 if (response.data && response.data.phs) {
                     const pdahorizontals = response.data.phs.map(ph => ({
