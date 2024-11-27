@@ -9,15 +9,18 @@ const port = 3000; // Puerto fijo
 
 app.use(express.json()); // Reemplazo de bodyParser para manejar JSON
 
-// Función de reintentos con un límite de 5 intentos y timeout de 3 segundos por conexión
-async function fetchWithRetries(url, maxRetries = 5, timeout = 3000) {
+// Función de reintentos con un límite de 3 intentos y timeout de 5 segundos por conexión
+async function fetchWithRetries(url, maxRetries = 3, timeout = 5000) {
     for (let i = 0; i < maxRetries; i++) {
         try {
             const response = await axios.get(url, { timeout });
             return response; // Éxito: retornar respuesta
         } catch (error) {
             console.error(`Intento ${i + 1} fallido: ${error.message}`);
-            if (i === maxRetries - 1) throw error; // Último intento fallido
+            if (i === maxRetries - 1) {
+                console.error('Error de conexión: No se pudo conectar después de 3 intentos.');
+                throw new Error('Error de conexión'); // Lanzar error final
+            }
         }
     }
 }
