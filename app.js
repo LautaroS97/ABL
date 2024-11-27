@@ -1,7 +1,7 @@
 require('dotenv').config();
 
 const express = require('express');
-const axios = require('axios');
+const puppeteer = require('puppeteer');
 const nodemailer = require('nodemailer');
 
 const app = express();
@@ -9,19 +9,23 @@ const port = 3000; // Puerto fijo
 
 app.use(express.json()); // Reemplazo de bodyParser para manejar JSON
 
-// Función de reintentos con un límite de 3 intentos y timeout de 5 segundos por conexión
-async function fetchWithRetries(url, maxRetries = 3, timeout = 5000) {
-    for (let i = 0; i < maxRetries; i++) {
-        try {
-            const response = await axios.get(url, { timeout });
-            return response; // Éxito: retornar respuesta
-        } catch (error) {
-            console.error(`Intento ${i + 1} fallido: ${error.message}`);
-            if (i === maxRetries - 1) {
-                console.error('Error de conexión: No se pudo conectar después de 3 intentos.');
-                throw new Error('Error de conexión'); // Lanzar error final
-            }
-        }
+// Función para realizar solicitudes con Puppeteer
+async function fetchWithPuppeteer(url) {
+    const browser = await puppeteer.launch({
+        headless: true, // Ejecutar sin interfaz gráfica
+        args: ['--no-sandbox', '--disable-setuid-sandbox'], // Opciones para entornos de servidor
+    });
+    const page = await browser.newPage();
+
+    try {
+        await page.goto(url, { timeout: 15000, waitUntil: 'domcontentloaded' });
+        const bodyText = await page.evaluate(() => document.body.innerText);
+        return JSON.parse(bodyText); // Convertir la respuesta en JSON
+    } catch (error) {
+        console.error(`Error en Puppeteer al cargar ${url}:`, error.message);
+        throw error;
+    } finally {
+        await browser.close();
     }
 }
 
@@ -61,131 +65,63 @@ app.post('/verification', async (req, res) => {
     }
 });
 
-// Verificar propiedad (modificado con reintentos)
+// Verificar propiedad usando Puppeteer
 async function verifyProperty(lat, lng) {
     try {
-        console.log(`Verifying property existence for coordinates: ${lat}, ${lng}`);
+        console.log(`Verificando propiedad en lat: ${lat}, lng: ${lng}`);
         const baseUrl = `https://epok.buenosaires.gob.ar/catastro/parcela/?lng=${lng}&lat=${lat}`;
-        let response = await fetchWithRetries(baseUrl);
+        const data = await fetchWithPuppeteer(baseUrl);
 
-        if (response.data) {
-            if (response.data.propiedad_horizontal === "Si") {
-                console.log('Propiedad horizontal detectada. Verificando unidades funcionales...');
-                response = await fetchWithRetries(`${baseUrl}&ph`);
-                if (response.data && response.data.phs && response.data.phs.length > 0) {
-                    console.log('La partida existe (propiedad horizontal).');
-                    return { message: 'La partida existe', phs: response.data.phs };
-                } else {
-                    console.log('La partida no existe (propiedad horizontal sin unidades).');
-                    return { message: 'La partida no existe' };
-                }
-            } else if (response.data.pdamatriz) {
-                const pdamatriz = response.data.pdamatriz;
-                console.log('Número de partida matriz obtenido:', pdamatriz);
-
-                try {
-                    const debtUrl = `https://lb.agip.gob.ar/ConsultaABL/comprobante/ESTADO-DEUDA-ABL-734456.pdf?boletasSeleccionadas=&identificadorPDF=${pdamatriz}&dvPDF=4&fechaInicioPDF=`;
-                    const debtResponse = await fetchWithRetries(debtUrl);
-
-                    if (debtResponse.data.includes('"statusCode":402')) {
-                        console.log('La partida no existe (statusCode 402 detectado).');
-                        return { message: 'La partida no existe' };
-                    } else {
-                        console.log('La partida existe (statusCode 402 no detectado).');
-                        return { message: 'La partida existe', pdamatriz: pdamatriz };
-                    }
-                } catch (error) {
-                    console.error('Error accediendo al URL de deuda:', error);
-                    throw error;
-                }
+        if (data.propiedad_horizontal === "Si") {
+            console.log('Propiedad horizontal detectada. Verificando unidades funcionales...');
+            const phData = await fetchWithPuppeteer(`${baseUrl}&ph`);
+            if (phData.phs && phData.phs.length > 0) {
+                return { message: 'La partida existe', phs: phData.phs };
+            } else {
+                return { message: 'La partida no existe (sin unidades funcionales)' };
             }
-            console.log('La partida no existe (respuesta sin pdamatriz ni phs).');
-            return { message: 'La partida no existe' };
-        } else {
-            console.error('Respuesta vacía o sin formato esperado en la verificación.');
-            return { error: 'Respuesta vacía o sin formato esperado en la verificación.' };
+        } else if (data.pdamatriz) {
+            const pdamatriz = data.pdamatriz;
+            console.log(`Número de partida matriz obtenido: ${pdamatriz}`);
+            return { message: 'La partida existe', pdamatriz };
         }
+
+        return { message: 'La partida no existe' };
     } catch (error) {
-        console.error('Error verificando la propiedad:', error);
+        console.error('Error verificando propiedad:', error.message);
         throw error;
     }
 }
 
-// Obtener datos de ABL (modificado con reintentos)
+// Obtener datos de ABL usando Puppeteer
 async function fetchAblData(lat, lng) {
     try {
-        console.log(`Fetching ABL data for coordinates: ${lat}, ${lng}`);
+        console.log(`Obteniendo datos de ABL para lat: ${lat}, lng: ${lng}`);
         const baseUrl = `https://epok.buenosaires.gob.ar/catastro/parcela/?lng=${lng}&lat=${lat}`;
-        let response = await fetchWithRetries(baseUrl);
+        const data = await fetchWithPuppeteer(baseUrl);
 
-        if (response.data) {
-            console.log('Respuesta obtenida:', response.data);
-
-            if (response.data.propiedad_horizontal === "Si") {
-                console.log('Propiedad horizontal detectada. Solicitando datos adicionales con &ph...');
-                response = await fetchWithRetries(`${baseUrl}&ph`);
-                if (response.data && response.data.phs) {
-                    const pdahorizontals = response.data.phs.map(ph => ({
-                        pdahorizontal: ph.pdahorizontal,
-                        piso: ph.piso,
-                        dpto: ph.dpto
-                    }));
-                    console.log('Valores de pdahorizontal obtenidos:', pdahorizontals);
-                    return pdahorizontals;
-                } else {
-                    console.error('No se encontraron valores de pdahorizontal en la respuesta.');
-                    return null;
-                }
-            } else if (response.data.pdamatriz) {
-                const pdamatriz = response.data.pdamatriz;
-                console.log('Número de partida matriz obtenido:', pdamatriz);
-                return pdamatriz;
-            } else {
-                console.error('No se encontró el número de partida matriz en la respuesta.');
-                return null;
-            }
-        } else {
-            console.error('Respuesta vacía o sin formato esperado.');
-            return null;
+        if (data.propiedad_horizontal === "Si") {
+            console.log('Propiedad horizontal detectada. Obteniendo datos adicionales...');
+            const phData = await fetchWithPuppeteer(`${baseUrl}&ph`);
+            return phData.phs ? phData.phs.map(ph => ({
+                pdahorizontal: ph.pdahorizontal,
+                piso: ph.piso,
+                dpto: ph.dpto
+            })) : null;
+        } else if (data.pdamatriz) {
+            return data.pdamatriz;
         }
+
+        console.error('No se encontraron datos válidos.');
+        return null;
     } catch (error) {
-        console.error('Error obteniendo datos de ABL:', error);
+        console.error('Error obteniendo datos de ABL:', error.message);
         throw error;
     }
 }
 
 // Enviar email
 async function sendEmail(email, data) {
-    let dataText, dataHtml;
-
-    if (Array.isArray(data)) {
-        const dataFormatted = data.map(item => `Partida: ${item.pdahorizontal}, Piso: ${item.piso}, Dpto: ${item.dpto}`).join('\n');
-        const dataFormattedHtml = data.map(item => `<li>Partida: <b>${item.pdahorizontal}</b>, Piso: <b>${item.piso}</b>, Dpto: <b>${item.dpto}</b></li>`).join('');
-
-        dataText = `Los números de partida son:\n${dataFormatted}\n\nTe llegó este correo porque solicitaste los números de partida al servicio de consultas de ProProp.`;
-        dataHtml = `
-            <div style="padding: 1rem; text-align: center;">
-                <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
-                <p>Los números de partida son:</p>
-                <ul style="text-align: left; padding-left: 2rem;">
-                    ${dataFormattedHtml}
-                </ul><hr>
-                <p>Puede utilizar esta información para realizar consultas adicionales en la AGIP, haciendo <a href="https://lb.agip.gob.ar/ConsultaABL/">clic acá.</a></p>
-                <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste los números de partida al servicio de consultas de ProProp.</p>
-            </div>
-        `;
-    } else {
-        dataText = `El número de partida es:\n${data}\n\nTe llegó este correo porque solicitaste tu número de partida al servicio de consultas de ProProp.`;
-        dataHtml = `
-            <div style="padding: 1rem; text-align: center;">
-                <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
-                <p>El número de partida es:<br><b>${data}</b></p><hr>
-                <p>Puede utilizar esta información para realizar consultas adicionales en la AGIP, haciendo <a href="https://lb.agip.gob.ar/ConsultaABL/">clic acá.</a></p>
-                <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste tu número de partida al servicio de consultas de ProProp.</p>
-            </div>
-        `;
-    }
-
     let transporter = nodemailer.createTransport({
         host: "smtp-relay.brevo.com",
         port: 465,
@@ -196,32 +132,32 @@ async function sendEmail(email, data) {
         },
         tls: {
             rejectUnauthorized: false
-        },
-        connectionTimeout: 15000, // Reducido de 60s a 15s
-        greetingTimeout: 15000,
-        socketTimeout: 15000,
+        }
     });
 
-    let mailOptions = {
+    const dataText = Array.isArray(data)
+        ? data.map(d => `Partida: ${d.pdahorizontal}, Piso: ${d.piso}, Dpto: ${d.dpto}`).join('\n')
+        : `Partida matriz: ${data}`;
+
+    const mailOptions = {
         from: '"PROPROP" <ricardo@proprop.com.ar>',
         to: email,
-        bcc: 'info@proprop.com.ar',
         subject: "Consulta de ABL",
         text: dataText,
-        html: dataHtml
+        html: `<p>${dataText.replace(/\n/g, '<br>')}</p>`
     };
 
     try {
-        let info = await transporter.sendMail(mailOptions);
-        console.log('Message sent: %s', info.messageId);
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Correo enviado:', info.messageId);
     } catch (error) {
-        console.error('Error enviando email:', error);
+        console.error('Error enviando correo:', error.message);
         throw error;
     }
 }
 
 const server = app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+    console.log(`Servidor ejecutándose en el puerto ${port}`);
 });
 
 server.setTimeout(15000); // Reducido de 60s a 15s
