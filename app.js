@@ -61,6 +61,7 @@ async function verifyProperty(lat, lng) {
 
         if (response.data) {
             if (response.data.propiedad_horizontal === "Si") {
+                // Manejo de propiedades horizontales
                 console.log('Propiedad horizontal detectada. Verificando unidades funcionales...');
                 response = await axios.get(`${baseUrl}&ph`);
                 if (response.data && response.data.phs && response.data.phs.length > 0) {
@@ -76,23 +77,26 @@ async function verifyProperty(lat, lng) {
 
                 try {
                     const debtUrl = `https://lb.agip.gob.ar/ConsultaABL/comprobante/ESTADO-DEUDA-ABL-734456.pdf?boletasSeleccionadas=&identificadorPDF=${pdamatriz}&dvPDF=4&fechaInicioPDF=`;
-                    const debtResponse = await axios.get(debtUrl, { responseType: 'text' });
+                    const debtResponse = await axios.get(debtUrl, { responseType: 'arraybuffer' });
 
-                    // Verificar si el mensaje de error aparece en la respuesta
-                    if (debtResponse.data.includes('"status":"ERROR GIT: PARTIDA DADA DE BAJA')) {
-                        console.log('La partida no existe (mensaje de error encontrado).');
-                        return { message: 'La partida no existe' };
-                    } else {
-                        console.log('La partida existe (mensaje de error no encontrado).');
+                    const contentType = debtResponse.headers['content-type'];
+                    console.log('Content-Type:', contentType);
+
+                    if (contentType.includes('application/pdf')) {
+                        console.log('La partida existe (PDF recibido).');
                         return { message: 'La partida existe', pdamatriz: pdamatriz };
+                    } else {
+                        console.log('La partida no existe (no se recibió PDF).');
+                        return { message: 'La partida no existe' };
                     }
                 } catch (error) {
                     console.error('Error accediendo al URL de deuda:', error);
                     throw error;
                 }
+            } else {
+                console.log('La partida no existe (respuesta sin pdamatriz ni phs).');
+                return { message: 'La partida no existe' };
             }
-            console.log('La partida no existe (respuesta sin pdamatriz ni phs).');
-            return { message: 'La partida no existe' };
         } else {
             console.error('Respuesta vacía o sin formato esperado en la verificación.');
             return { error: 'Respuesta vacía o sin formato esperado en la verificación.' };
@@ -111,7 +115,7 @@ async function fetchAblData(lat, lng) {
 
         if (response.data) {
             console.log('Respuesta obtenida:', response.data);
-
+            
             // Verificar si la propiedad es horizontal
             if (response.data.propiedad_horizontal === "Si") {
                 console.log('Propiedad horizontal detectada. Solicitando datos adicionales con &ph...');
