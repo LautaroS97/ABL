@@ -12,9 +12,16 @@ app.use(express.json()); // Reemplazo de bodyParser para manejar JSON
 // Función para realizar solicitudes con Puppeteer
 async function fetchWithPuppeteer(url) {
     const browser = await puppeteer.launch({
-        headless: true, // Ejecutar sin interfaz gráfica
-        args: ['--no-sandbox', '--disable-setuid-sandbox'], // Opciones para entornos de servidor
-    });
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--single-process',
+          '--no-zygote'
+        ],
+      });
     const page = await browser.newPage();
 
     try {
