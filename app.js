@@ -14,12 +14,12 @@ async function fetchWithPuppeteer(url) {
     const browser = await puppeteer.launch({
         headless: true,
         args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--single-process',
-          '--no-zygote'
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--single-process',
+            '--no-zygote'
         ],
     });
     const page = await browser.newPage();
@@ -129,7 +129,39 @@ async function fetchAblData(lat, lng) {
 
 // Enviar email
 async function sendEmail(email, data) {
-    let transporter = nodemailer.createTransport({
+    let dataText, dataHtml;
+
+    if (Array.isArray(data)) {
+        const dataFormatted = data.map(item => `Partida: ${item.pdahorizontal}, Piso: ${item.piso}, Dpto: ${item.dpto}`).join('\n');
+        const dataFormattedHtml = data.map(item => `<li>Partida: <b>${item.pdahorizontal}</b>, Piso: <b>${item.piso}</b>, Dpto: <b>${item.dpto}</b></li>`).join('');
+
+        dataText = `Los números de partida son:\n${dataFormatted}\n\nTe llegó este correo porque solicitaste los números de partida al servicio de consultas de ProProp.`;
+        dataHtml = `
+            <div style="padding: 1rem; text-align: center;">
+                <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
+                <p>Los números de partida son:</p>
+                <ul style="text-align: left; padding-left: 2rem;">
+                    ${dataFormattedHtml}
+                </ul>
+                <hr>
+                <p>Puedes utilizar esta información para realizar consultas adicionales en la AGIP, haciendo <a href="https://lb.agip.gob.ar/ConsultaABL/">clic acá.</a></p>
+                <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste los números de partida al servicio de consultas de ProProp.</p>
+            </div>
+        `;
+    } else {
+        dataText = `El número de partida es:\n${data}\n\nTe llegó este correo porque solicitaste tu número de partida al servicio de consultas de ProProp.`;
+        dataHtml = `
+            <div style="padding: 1rem; text-align: center;">
+                <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
+                <p>El número de partida es:<br><b>${data}</b></p>
+                <hr>
+                <p>Puedes utilizar esta información para realizar consultas adicionales en la AGIP, haciendo <a href="https://lb.agip.gob.ar/ConsultaABL/">clic acá.</a></p>
+                <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste tu número de partida al servicio de consultas de ProProp.</p>
+            </div>
+        `;
+    }
+
+    const transporter = nodemailer.createTransport({
         host: "smtp-relay.brevo.com",
         port: 465,
         secure: true,
@@ -138,20 +170,16 @@ async function sendEmail(email, data) {
             pass: process.env.BREVO_PASS,
         },
         tls: {
-            rejectUnauthorized: false
+            rejectUnauthorized: false,
         }
     });
-
-    const dataText = Array.isArray(data)
-        ? data.map(d => `Partida: ${d.pdahorizontal}, Piso: ${d.piso}, Dpto: ${d.dpto}`).join('\n')
-        : `Partida matriz: ${data}`;
 
     const mailOptions = {
         from: '"PROPROP" <ricardo@proprop.com.ar>',
         to: email,
         subject: "Consulta de ABL",
         text: dataText,
-        html: `<p>${dataText.replace(/\n/g, '<br>')}</p>`
+        html: dataHtml
     };
 
     try {
