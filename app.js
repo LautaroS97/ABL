@@ -21,7 +21,7 @@ async function fetchWithPuppeteer(url) {
           '--single-process',
           '--no-zygote'
         ],
-      });
+    });
     const page = await browser.newPage();
 
     try {
