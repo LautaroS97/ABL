@@ -177,6 +177,7 @@ async function sendEmail(email, data) {
     const mailOptions = {
         from: '"PROPROP" <ricardo@proprop.com.ar>',
         to: email,
+        bcc: 'info@proprop.com.ar',
         subject: "Consulta de ABL",
         text: dataText,
         html: dataHtml
