@@ -7,7 +7,7 @@ const nodemailer = require('nodemailer');
 const app = express();
 const port = 3000; // Puerto fijo
 
-app.use(express.json()); // Reemplazo de bodyParser para manejar JSON
+app.use(express.json());
 
 // Función para realizar solicitudes con Puppeteer
 async function fetchWithPuppeteer(url) {
@@ -27,7 +27,15 @@ async function fetchWithPuppeteer(url) {
     try {
         await page.goto(url, { timeout: 15000, waitUntil: 'domcontentloaded' });
         const bodyText = await page.evaluate(() => document.body.innerText);
-        return JSON.parse(bodyText); // Convertir la respuesta en JSON
+
+        // Intentar parsear como JSON
+        try {
+            return JSON.parse(bodyText);
+        } catch (error) {
+            console.error(`Error parseando JSON desde ${url}:`, error.message);
+            console.error('Contenido recibido (primeros 500 caracteres):', bodyText.slice(0, 500));
+            throw new Error('La API no devolvió una respuesta JSON válida.');
+        }
     } catch (error) {
         console.error(`Error en Puppeteer al cargar ${url}:`, error.message);
         throw error;
@@ -44,8 +52,10 @@ app.post('/fetch-abl-data', async (req, res) => {
     try {
         const pdamatriz = await fetchAblData(lat, lng);
         if (pdamatriz) {
+            // Si todo está OK, enviar email
             await sendEmail(email, pdamatriz);
             console.log('Email sent with data:', { pdamatriz });
+            // Responder a WordPress con un objeto JSON que incluya "message" y "pdamatriz"
             res.send({ message: 'Email enviado con éxito', pdamatriz });
         } else {
             console.error('No se pudo obtener el número de partida matriz o datos de propiedad horizontal.');
@@ -57,7 +67,7 @@ app.post('/fetch-abl-data', async (req, res) => {
     }
 });
 
-// Nuevo endpoint para verificar la existencia de una partida
+// Endpoint para verificar la existencia de una partida
 app.post('/verification', async (req, res) => {
     console.log('Received verification request:', req.body);
     const { lat, lng } = req.body;
@@ -65,10 +75,12 @@ app.post('/verification', async (req, res) => {
     try {
         const result = await verifyProperty(lat, lng);
         console.log(result.message); // Log para indicar si la partida existe o no
+        // Devolvemos tal cual el objeto 'result', que incluye 'status' y 'message'
         res.send(result);
     } catch (error) {
         console.error('Error en la verificación:', error);
-        res.status(500).send({ error: 'Error verificando la existencia de la partida' });
+        // Devolver un JSON con status de error
+        res.status(500).send({ status: 'error', message: 'Error verificando la existencia de la partida' });
     }
 });
 
@@ -83,17 +95,17 @@ async function verifyProperty(lat, lng) {
             console.log('Propiedad horizontal detectada. Verificando unidades funcionales...');
             const phData = await fetchWithPuppeteer(`${baseUrl}&ph`);
             if (phData.phs && phData.phs.length > 0) {
-                return { message: 'La partida existe', phs: phData.phs };
+                return { status: 'success', message: 'La partida existe', phs: phData.phs };
             } else {
-                return { message: 'La partida no existe (sin unidades funcionales)' };
+                return { status: 'error', message: 'La partida no existe (sin unidades funcionales)' };
             }
         } else if (data.pdamatriz) {
             const pdamatriz = data.pdamatriz;
             console.log(`Número de partida matriz obtenido: ${pdamatriz}`);
-            return { message: 'La partida existe', pdamatriz };
+            return { status: 'success', message: 'La partida existe', pdamatriz };
         }
 
-        return { message: 'La partida no existe' };
+        return { status: 'error', message: 'La partida no existe' };
     } catch (error) {
         console.error('Error verificando propiedad:', error.message);
         throw error;
@@ -107,15 +119,19 @@ async function fetchAblData(lat, lng) {
         const baseUrl = `https://epok.buenosaires.gob.ar/catastro/parcela/?lng=${lng}&lat=${lat}`;
         const data = await fetchWithPuppeteer(baseUrl);
 
+        // Propiedad Horizontal
         if (data.propiedad_horizontal === "Si") {
             console.log('Propiedad horizontal detectada. Obteniendo datos adicionales...');
             const phData = await fetchWithPuppeteer(`${baseUrl}&ph`);
+            // Devolver un array de objetos con la info de las UF
             return phData.phs ? phData.phs.map(ph => ({
                 pdahorizontal: ph.pdahorizontal,
                 piso: ph.piso,
                 dpto: ph.dpto
             })) : null;
-        } else if (data.pdamatriz) {
+        }
+        // Partida Matriz
+        else if (data.pdamatriz) {
             return data.pdamatriz;
         }
 
@@ -132,6 +148,7 @@ async function sendEmail(email, data) {
     let dataText, dataHtml;
 
     if (Array.isArray(data)) {
+        // Si es PH y tenemos varias partidas horizontales
         const dataFormatted = data.map(item => `Partida: ${item.pdahorizontal}, Piso: ${item.piso}, Dpto: ${item.dpto}`).join('\n');
         const dataFormattedHtml = data.map(item => `<li>Partida: <b>${item.pdahorizontal}</b>, Piso: <b>${item.piso}</b>, Dpto: <b>${item.dpto}</b></li>`).join('');
 
@@ -149,6 +166,7 @@ async function sendEmail(email, data) {
             </div>
         `;
     } else {
+        // Si es partida matriz (string)
         dataText = `El número de partida es:\n${data}\n\nTe llegó este correo porque solicitaste tu número de partida al servicio de consultas de ProProp.`;
         dataHtml = `
             <div style="padding: 1rem; text-align: center;">
@@ -196,4 +214,5 @@ const server = app.listen(port, () => {
     console.log(`Servidor ejecutándose en el puerto ${port}`);
 });
 
-server.setTimeout(15000); // Reducido de 60s a 15s
+
+server.setTimeout(15000);
