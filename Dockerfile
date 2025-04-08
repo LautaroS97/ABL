@@ -1,20 +1,23 @@
-# Imagen base con Puppeteer y Chromium ya instalados
 FROM ghcr.io/puppeteer/puppeteer:latest
 
-# Establecer el directorio de trabajo
 WORKDIR /app
 
-# Copiar package.json y package-lock.json (si lo tenés)
+# Copiar los archivos primero
 COPY package*.json ./
 
-# Instalar dependencias (ya hay node y npm en la imagen base)
+# Dar permisos antes de instalar
+RUN chown -R pptruser:pptruser /app \
+ && chmod -R 755 /app
+
+# Cambiar a usuario pptruser (el que usa esta imagen)
+USER pptruser
+
+# Instalar dependencias como ese usuario
 RUN npm install
 
 # Copiar el resto del código
-COPY . .
+COPY --chown=pptruser:pptruser . .
 
-# Exponer el puerto
 EXPOSE 3000
 
-# Comando para ejecutar la app
 CMD ["npm", "start"]
