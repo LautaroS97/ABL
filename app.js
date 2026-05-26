@@ -2,7 +2,6 @@ require('dotenv').config();
 
 const express = require('express');
 const puppeteer = require('puppeteer');
-const nodemailer = require('nodemailer');
 
 const app = express();
 const port = 3000;
@@ -37,21 +36,6 @@ function isPropiedadHorizontal(value) {
     return v !== 'no';
 }
 
-function createTransporter() {
-    return nodemailer.createTransport({
-        host: "smtp-relay.brevo.com",
-        port: 465,
-        secure: true,
-        auth: {
-            user: process.env.BREVO_USER,
-            pass: process.env.BREVO_PASS,
-        },
-        tls: {
-            rejectUnauthorized: false,
-        }
-    });
-}
-
 async function fetchWithPuppeteer(url) {
     const page = await browser.newPage();
     try {
@@ -71,101 +55,6 @@ async function fetchWithPuppeteer(url) {
     } finally {
         await page.close();
     }
-}
-
-async function sendEmailToUser(email, data) {
-    let dataText, dataHtml;
-
-    if (Array.isArray(data)) {
-        const dataFormatted = data.map(item => `Partida: ${item.pdahorizontal}, Piso: ${item.piso}, Dpto: ${item.dpto}`).join('\n');
-        const dataFormattedHtml = data.map(item => `<li>Partida: <b>${item.pdahorizontal}</b>, Piso: <b>${item.piso}</b>, Dpto: <b>${item.dpto}</b></li>`).join('');
-
-        dataText = `Los números de partida son:\n${dataFormatted}\n\nTe llegó este correo porque solicitaste los números de partida al servicio de consultas de ProProp.`;
-        dataHtml = `
-            <div style="padding: 1rem; text-align: center;">
-                <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
-                <p>Los números de partida son:</p>
-                <ul style="text-align: left; padding-left: 2rem;">
-                    ${dataFormattedHtml}
-                </ul>
-                <hr>
-                <p>Puedes utilizar esta información para realizar consultas adicionales en la AGIP, haciendo <a href="https://lb.agip.gob.ar/ConsultaABL/">clic acá.</a></p>
-                <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste los números de partida al servicio de consultas de ProProp.</p>
-            </div>
-        `;
-    } else {
-        dataText = `El número de partida es:\n${data}\n\nTe llegó este correo porque solicitaste tu número de partida al servicio de consultas de ProProp.`;
-        dataHtml = `
-            <div style="padding: 1rem; text-align: center;">
-                <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
-                <p>El número de partida es:<br><b>${data}</b></p>
-                <hr>
-                <p>Puedes utilizar esta información para realizar consultas adicionales en la AGIP, haciendo <a href="https://lb.agip.gob.ar/ConsultaABL/">clic acá.</a></p>
-                <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste tu número de partida al servicio de consultas de ProProp.</p>
-            </div>
-        `;
-    }
-
-    const transporter = createTransporter();
-
-    const mailOptions = {
-        from: '"PROPROP" <ricardo@proprop.com.ar>',
-        to: email,
-        bcc: 'info@proprop.com.ar',
-        subject: "Consulta de ABL",
-        text: dataText,
-        html: dataHtml
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    console.log('Correo al usuario enviado:', info.messageId);
-}
-
-async function sendManualCaseEmailToAdmin(userEmail, lat, lng, pdamatriz, baseUrl) {
-    const transporter = createTransporter();
-
-    const subject = 'ABL - Caso manual (PH sin UF)';
-    const text = [
-        'Se detectó un caso PH donde el endpoint &ph no devolvió unidades funcionales (phs vacío o inexistente).',
-        '',
-        `Email del usuario: ${userEmail}`,
-        `Lat: ${lat}`,
-        `Lng: ${lng}`,
-        `Partida matriz (pdamatriz): ${pdamatriz}`,
-        '',
-        `URL base: ${baseUrl}`,
-        `URL PH: ${baseUrl}&ph`,
-        '',
-        'Acción sugerida: usar la partida matriz para obtener manualmente el resto de los datos y responder al usuario.'
-    ].join('\n');
-
-    const html = `
-        <div style="padding: 1rem; font-family: Arial, sans-serif;">
-            <h2 style="margin: 0 0 0.5rem 0;">ABL - Caso manual (PH sin UF)</h2>
-            <p>Se detectó un caso <b>propiedad horizontal</b> donde el endpoint <code>&amp;ph</code> no devolvió unidades funcionales (<code>phs</code> vacío o inexistente).</p>
-            <hr>
-            <p><b>Email del usuario:</b> ${userEmail}</p>
-            <p><b>Lat:</b> ${lat}</p>
-            <p><b>Lng:</b> ${lng}</p>
-            <p><b>Partida matriz (pdamatriz):</b> ${pdamatriz}</p>
-            <hr>
-            <p><b>URL base:</b> <a href="${baseUrl}">${baseUrl}</a></p>
-            <p><b>URL PH:</b> <a href="${baseUrl}&ph">${baseUrl}&ph</a></p>
-            <hr>
-            <p><i>Acción sugerida: usar la partida matriz para obtener manualmente el resto de los datos y responder al usuario.</i></p>
-        </div>
-    `;
-
-    const mailOptions = {
-        from: '"PROPROP" <ricardo@proprop.com.ar>',
-        to: 'info@proprop.com.ar',
-        subject,
-        text,
-        html
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    console.log('Correo interno (caso manual) enviado:', info.messageId);
 }
 
 async function verifyProperty(lat, lng) {
@@ -205,7 +94,7 @@ async function verifyProperty(lat, lng) {
     }
 }
 
-async function fetchAblData(lat, lng, userEmail) {
+async function fetchAblData(lat, lng) {
     try {
         console.log(`Obteniendo datos de ABL para lat: ${lat}, lng: ${lng}`);
         const baseUrl = `https://epok.buenosaires.gob.ar/catastro/parcela/?lng=${lng}&lat=${lat}`;
@@ -220,22 +109,36 @@ async function fetchAblData(lat, lng, userEmail) {
             const phs = Array.isArray(phData.phs) ? phData.phs : [];
 
             if (phs.length > 0) {
-                return phs.map(phItem => ({
-                    pdahorizontal: phItem.pdahorizontal,
-                    piso: phItem.piso,
-                    dpto: phItem.dpto
-                }));
+                return {
+                    type: 'horizontal_property',
+                    partidas: phs.map(phItem => ({
+                        pdahorizontal: phItem.pdahorizontal,
+                        piso: phItem.piso,
+                        dpto: phItem.dpto
+                    }))
+                };
             }
 
             if (pdamatriz) {
-                await sendManualCaseEmailToAdmin(userEmail, lat, lng, pdamatriz, baseUrl);
-                return { manual: true, pdamatriz };
+                return {
+                    type: 'manual_review',
+                    manual: true,
+                    reason: 'PH_EMPTY',
+                    pdamatriz,
+                    baseUrl,
+                    phUrl: `${baseUrl}&ph`
+                };
             }
 
             return null;
         }
 
-        if (pdamatriz) return pdamatriz;
+        if (pdamatriz) {
+            return {
+                type: 'single',
+                pdamatriz
+            };
+        }
 
         console.error('No se encontraron datos válidos.');
         return null;
@@ -249,27 +152,65 @@ app.use(express.json());
 
 app.post('/fetch-abl-data', async (req, res) => {
     console.log('Received data:', req.body);
-    const { lat, lng, email } = req.body;
+    const { lat, lng, email, address } = req.body;
 
     try {
-        const result = await fetchAblData(lat, lng, email);
+        const result = await fetchAblData(lat, lng);
 
         if (!result) {
             console.error('No se pudo obtener el número de partida matriz o datos de propiedad horizontal.');
-            return res.status(500).send({ error: 'No se pudo obtener el número de partida matriz o datos de propiedad horizontal.' });
+            return res.status(500).send({
+                success: false,
+                service: 'abl',
+                error: 'No se pudo obtener el número de partida matriz o datos de propiedad horizontal.',
+                email,
+                address,
+                lat,
+                lng
+            });
         }
 
-        if (typeof result === 'object' && !Array.isArray(result) && result.manual && result.pdamatriz) {
-            console.log('Caso manual detectado. No se envía mail al usuario. Se informó a info@proprop.com.ar.');
-            return res.send({ message: 'Email enviado con éxito', manual: true, pdamatriz: result.pdamatriz });
+        if (result.manual) {
+            console.log('Caso manual detectado. Se devuelve a WordPress para revisión administrativa.');
+            return res.send({
+                success: true,
+                service: 'abl',
+                message: 'Caso manual detectado',
+                manual: true,
+                reason: result.reason,
+                pdamatriz: result.pdamatriz,
+                baseUrl: result.baseUrl,
+                phUrl: result.phUrl,
+                email,
+                address,
+                lat,
+                lng
+            });
         }
 
-        await sendEmailToUser(email, result);
-        console.log('Email sent with data:', { result });
-        return res.send({ message: 'Email enviado con éxito', result });
+        console.log('Datos ABL obtenidos correctamente:', { result });
+        return res.send({
+            success: true,
+            service: 'abl',
+            message: 'Datos ABL obtenidos correctamente',
+            result,
+            email,
+            address,
+            lat,
+            lng
+        });
     } catch (error) {
         console.error('Error en el proceso:', error);
-        return res.status(500).send({ error: 'Error procesando la solicitud' });
+        return res.status(500).send({
+            success: false,
+            service: 'abl',
+            error: 'Error procesando la solicitud',
+            details: error.message || String(error),
+            email,
+            address,
+            lat,
+            lng
+        });
     }
 });
 
@@ -293,7 +234,7 @@ startBrowser()
             console.log(`Servidor ejecutándose en el puerto ${port}`);
         });
 
-        server.setTimeout(20000);
+        server.setTimeout(60000);
 
         process.on('SIGINT', async () => {
             console.log('Apagando servidor...');
