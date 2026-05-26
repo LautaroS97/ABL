@@ -170,26 +170,7 @@ app.post('/fetch-abl-data', async (req, res) => {
             });
         }
 
-        if (result.manual) {
-            console.log('Caso manual detectado. Se devuelve a WordPress para revisión administrativa.');
-            return res.send({
-                success: true,
-                service: 'abl',
-                message: 'Caso manual detectado',
-                manual: true,
-                reason: result.reason,
-                pdamatriz: result.pdamatriz,
-                baseUrl: result.baseUrl,
-                phUrl: result.phUrl,
-                email,
-                address,
-                lat,
-                lng
-            });
-        }
-
-        console.log('Datos ABL obtenidos correctamente:', { result });
-        return res.send({
+        const response = {
             success: true,
             service: 'abl',
             message: 'Datos ABL obtenidos correctamente',
@@ -198,7 +179,28 @@ app.post('/fetch-abl-data', async (req, res) => {
             address,
             lat,
             lng
-        });
+        };
+
+        if (result.manual) {
+            response.message = 'Caso manual detectado';
+            response.manual = true;
+            response.reason = result.reason;
+            response.pdamatriz = result.pdamatriz;
+            response.baseUrl = result.baseUrl;
+            response.phUrl = result.phUrl;
+        }
+
+        if (result.type === 'horizontal_property') {
+            response.partidas = result.partidas;
+        }
+
+        if (result.type === 'single') {
+            response.pdamatriz = result.pdamatriz;
+            response.partidas = result.pdamatriz;
+        }
+
+        console.log('Datos ABL obtenidos correctamente:', { result });
+        return res.send(response);
     } catch (error) {
         console.error('Error en el proceso:', error);
         return res.status(500).send({
